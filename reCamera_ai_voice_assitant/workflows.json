@@ -1,0 +1,261 @@
+[
+    {
+        "id": "ace79a1640584e15",
+        "type": "tab",
+        "label": "流程 1",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "d05a88f5ece0c6ee",
+        "type": "function",
+        "z": "ace79a1640584e15",
+        "name": "动作判定: 手腕距离 < 肩膀距离",
+        "func": "let data = msg.payload.data || msg.payload;\nif (!data || !data.keypoints || !data.keypoints[0] || !data.keypoints[0][1]) return null;\n\nconst kpts = data.keypoints[0][1];\n\n// YOLOv11 pose 关键点索引定义\nconst LEFT_SHOULDER = 5;\nconst RIGHT_SHOULDER = 6;\nconst LEFT_WRIST = 9;\nconst RIGHT_WRIST = 10;\n\n// 提取关键点的辅助函数\nfunction getPt(i) {\n    const p = kpts[i];\n    if (!p || p[0] <= 1) return null;\n    return { x: p[0], y: p[1], conf: p[2] || 0 };\n}\n\nconst ls = getPt(LEFT_SHOULDER);\nconst rs = getPt(RIGHT_SHOULDER);\nconst lw = getPt(LEFT_WRIST);\nconst rw = getPt(RIGHT_WRIST);\n\n// 检查关键点是否存在且置信度大于0.4，防止误判\nif (!ls || !rs || !lw || !rw || ls.conf < 0.4 || rs.conf < 0.4 || lw.conf < 0.4 || rw.conf < 0.4) {\n    return null;\n}\n\n// 计算肩膀的直线距离和手腕的直线距离\nconst distShoulders = Math.sqrt(Math.pow(ls.x - rs.x, 2) + Math.pow(ls.y - rs.y, 2));\nconst distWrists = Math.sqrt(Math.pow(lw.x - rw.x, 2) + Math.pow(lw.y - rw.y, 2));\n\n// 核心判断逻辑：如果手腕距离小于肩膀距离，则认为动作达成\nconst isTriggered = distWrists < distShoulders;\n\n// 获取上一次触发的时间，设置10秒的冷却期，防止在录音和播放期间被重复触发\nlet lastTriggerTime = context.get(\"lastTriggerTime\") || 0;\nconst currentTime = Date.now();\n\nif (isTriggered && (currentTime - lastTriggerTime > 10000)) {\n    context.set(\"lastTriggerTime\", currentTime);\n    return { payload: \"触发录音!\" };\n}\n\nreturn null;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 770,
+        "y": 560,
+        "wires": [
+            [
+                "128e921632e5d69a"
+            ]
+        ]
+    },
+    {
+        "id": "128e921632e5d69a",
+        "type": "exec",
+        "z": "ace79a1640584e15",
+        "command": "echo \"&zhuxuanjun9\" | sudo -S sh -c 'echo 1 > /sys/class/leds/blue/brightness'",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "",
+        "winHide": false,
+        "oldrc": false,
+        "name": "蓝灯亮起",
+        "x": 1000,
+        "y": 560,
+        "wires": [
+            [
+                "724c27418833cf56"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "724c27418833cf56",
+        "type": "exec",
+        "z": "ace79a1640584e15",
+        "command": "arecord -D hw:0,0 -r 16000 -f S16_LE -c 1 -d 5 /tmp/test.wav",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "",
+        "oldrc": false,
+        "name": "麦克风录音 (5秒)",
+        "x": 1210,
+        "y": 560,
+        "wires": [
+            [
+                "9745818e3bf96cc5",
+                "e6f7e32a9bad34df"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "9745818e3bf96cc5",
+        "type": "exec",
+        "z": "ace79a1640584e15",
+        "command": "echo \"&zhuxuanjun9\" | sudo -S sh -c 'echo 0 > /sys/class/leds/blue/brightness'",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "",
+        "winHide": false,
+        "oldrc": false,
+        "name": "蓝灯熄灭",
+        "x": 1440,
+        "y": 500,
+        "wires": [
+            [],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "e6f7e32a9bad34df",
+        "type": "file in",
+        "z": "ace79a1640584e15",
+        "name": "读取音频",
+        "filename": "/tmp/test.wav",
+        "filenameType": "str",
+        "format": "",
+        "chunk": false,
+        "sendError": false,
+        "encoding": "none",
+        "allProps": false,
+        "x": 1440,
+        "y": 620,
+        "wires": [
+            [
+                "361390d791dda90c"
+            ]
+        ]
+    },
+    {
+        "id": "361390d791dda90c",
+        "type": "http request",
+        "z": "ace79a1640584e15",
+        "name": "发送给电脑大脑",
+        "method": "POST",
+        "ret": "bin",
+        "paytoqs": "ignore",
+        "url": "http://192.168.100.181:5000/interact",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [
+            {
+                "keyType": "other",
+                "keyValue": "Content-Type",
+                "valueType": "other",
+                "valueValue": "audio/wav"
+            }
+        ],
+        "x": 1620,
+        "y": 620,
+        "wires": [
+            [
+                "bdbfee147872873a"
+            ]
+        ]
+    },
+    {
+        "id": "bdbfee147872873a",
+        "type": "file",
+        "z": "ace79a1640584e15",
+        "name": "保存回复音频",
+        "filename": "/tmp/reply.wav",
+        "filenameType": "str",
+        "appendNewline": true,
+        "createDir": false,
+        "overwriteFile": "true",
+        "encoding": "none",
+        "x": 1820,
+        "y": 620,
+        "wires": [
+            [
+                "4ec203544e955d9e"
+            ]
+        ]
+    },
+    {
+        "id": "4ec203544e955d9e",
+        "type": "exec",
+        "z": "ace79a1640584e15",
+        "command": "aplay -D hw:1,0 -f S16_LE -c 1 -r 16000 /tmp/reply.wav",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "",
+        "winHide": false,
+        "oldrc": false,
+        "name": "扬声器播放",
+        "x": 2010,
+        "y": 620,
+        "wires": [
+            [],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "f35629e6ef3d66e8",
+        "type": "camera",
+        "z": "ace79a1640584e15",
+        "name": "AI 摄像头",
+        "client": "d4edfe2d22b78af8",
+        "audio": false,
+        "volume": 80,
+        "option": 0,
+        "fps": 30,
+        "mirror": false,
+        "flip": false,
+        "x": 300,
+        "y": 560,
+        "wires": [
+            [
+                "850e42fa5d9861b0"
+            ]
+        ]
+    },
+    {
+        "id": "850e42fa5d9861b0",
+        "type": "model",
+        "z": "ace79a1640584e15",
+        "name": "YOLO11n Pose",
+        "uri": "/usr/share/supervisor/models/yolo11n_pose_cv181x_int8.cvimodel",
+        "model": "YOLO11n Pose",
+        "tscore": "0.89",
+        "tiou": "0.64",
+        "debug": false,
+        "trace": false,
+        "counting": false,
+        "draw": false,
+        "classes": "person",
+        "splitter": "0,0,0,0",
+        "previewResolution": "640x640",
+        "previewFps": 30,
+        "client": "d4edfe2d22b78af8",
+        "x": 520,
+        "y": 560,
+        "wires": [
+            [
+                "d05a88f5ece0c6ee",
+                "17c111800e55fc61"
+            ]
+        ]
+    },
+    {
+        "id": "17c111800e55fc61",
+        "type": "preview",
+        "z": "ace79a1640584e15",
+        "name": "preview",
+        "active": true,
+        "pass": false,
+        "outputs": 0,
+        "x": 720,
+        "y": 700,
+        "wires": []
+    },
+    {
+        "id": "d4edfe2d22b78af8",
+        "type": "sscma",
+        "host": "localhost",
+        "mqttport": "1883",
+        "apiport": "80",
+        "clientid": "recamera",
+        "username": "",
+        "password": ""
+    },
+    {
+        "id": "e03cf1672e15ee24",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-sscma": "0.3.6"
+        }
+    }
+]
