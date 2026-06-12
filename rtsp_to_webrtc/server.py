@@ -4,6 +4,7 @@ Video Protocol to WebRTC Bridge Server
 Receives video from various protocols (RTSP, ONVIF, GB28181, RTMP, HLS)
 and serves via WebRTC for browser playback.
 
+MQTT broker and subscriber are in mqtt_broker.py.
 Uses the video_sources module for protocol abstraction.
 """
 
@@ -16,6 +17,13 @@ from aiohttp import web
 from aiortc import RTCPeerConnection, RTCSessionDescription
 
 from video_sources import create_video_source, detect_protocol, PROTOCOL_REGISTRY
+from mqtt_broker import (
+    start_mqtt_broker,
+    start_mqtt_subscriber,
+    MQTT_BROKER_HOST,
+    MQTT_BROKER_PORT,
+    MQTT_TOPIC,
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -28,6 +36,10 @@ pcs = set()
 # Get the directory where this script is located
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+
+# ============================================================================
+# HTTP/WebRTC Routes
+# ============================================================================
 
 async def index(request):
     """Serve the main HTML page."""
@@ -67,7 +79,7 @@ async def offer(request):
 
     # Get video source URL and optional protocol from client
     source_url = params.get("sourceUrl", params.get("rtspUrl", DEFAULT_URL))
-    protocol = params.get("protocol", None)  # Optional: force specific protocol
+    protocol = params.get("protocol", None)
 
     try:
         detected_proto = protocol or detect_protocol(source_url)
@@ -90,13 +102,22 @@ async def offer(request):
             await pc.close()
             pcs.discard(pc)
 
-    # Set remote description (the offer from browser) FIRST
     await pc.setRemoteDescription(offer_sdp)
 
-    # Create video source track using the abstraction layer
     try:
         video_track = create_video_source(source_url, protocol=protocol)
-        pc.addTrack(video_track)
+        sender = pc.addTrack(video_track)
+
+        # Increase VP8 bitrate to avoid blurry video
+        try:
+            params = sender.getParameters()
+            if params and params.encodings:
+                params.encodings[0].maxBitrate = 2_000_000
+                sender.setParameters(params)
+                logger.info("[WebRTC] VP8 maxBitrate set to 2Mbps")
+        except Exception as e:
+            logger.debug(f"[WebRTC] Failed to set encoding parameters: {e}")
+
         logger.info(f"Video track added: {video_track.__class__.__name__}")
     except (ConnectionError, Exception) as e:
         logger.error(f"Failed to create video track: {e}")
@@ -108,7 +129,6 @@ async def offer(request):
             status=500,
         )
 
-    # Create answer
     answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
 
@@ -120,8 +140,33 @@ async def offer(request):
     )
 
 
+# ============================================================================
+# Application Lifecycle
+# ============================================================================
+
+async def on_startup(app):
+    """Start MQTT Broker and subscriber on app startup."""
+    broker = await start_mqtt_broker()
+    app["mqtt_broker"] = broker
+
+    if broker:
+        await asyncio.sleep(0.5)
+        mqtt_client = start_mqtt_subscriber()
+        app["mqtt_client"] = mqtt_client
+
+
 async def on_shutdown(app):
-    """Clean up peer connections on shutdown."""
+    """Clean up peer connections and MQTT on shutdown."""
+    mqtt_client = app.get("mqtt_client")
+    if mqtt_client:
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
+        logger.info("[MQTT Client] Disconnected")
+
+    broker = app.get("mqtt_broker")
+    if broker:
+        await broker.shutdown()
+
     coros = [pc.close() for pc in pcs]
     await asyncio.gather(*coros)
     pcs.clear()
@@ -132,13 +177,13 @@ def main():
     global DEFAULT_URL
 
     parser = argparse.ArgumentParser(
-        description="Video Protocol to WebRTC Bridge Server",
+        description="Video Protocol to WebRTC Bridge Server (with embedded MQTT Broker)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Supported protocols:
   rtsp     - RTSP (Real-Time Streaming Protocol)
   onvif    - ONVIF (Open Network Video Interface Forum)
-  gb28181  - GB/T 28181 (国标28181)
+  gb28181  - GB/T 28181
   rtmp     - RTMP (Real-Time Messaging Protocol)
   hls      - HLS (HTTP Live Streaming)
 
@@ -161,6 +206,7 @@ Examples:
     DEFAULT_URL = args.source
 
     app = web.Application()
+    app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
     app.router.add_get("/", index)
     app.router.add_get("/protocols", protocols)
@@ -169,6 +215,7 @@ Examples:
     logger.info(f"Starting server on http://{args.host}:{args.port}")
     logger.info(f"Default source: {DEFAULT_URL}")
     logger.info(f"Supported protocols: {', '.join(PROTOCOL_REGISTRY.keys())}")
+    logger.info(f"MQTT Broker: {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}, topic: {MQTT_TOPIC}")
     logger.info(f"Open http://localhost:{args.port} in your browser")
 
     web.run_app(app, host=args.host, port=args.port)

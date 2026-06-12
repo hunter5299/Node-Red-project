@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>视频协议 WebRTC 播放器</title>
+    <title>Video Protocol WebRTC Player</title>
     <style>
         * {
             margin: 0;
@@ -284,7 +284,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>🎬 视频协议 WebRTC 播放器</h1>
+        <h1>🎬 Video Protocol WebRTC Player</h1>
     </div>
 
     <div class="container">
@@ -293,21 +293,21 @@
             <div class="overlay" id="overlay">
                 <div class="overlay-content">
                     <div class="spinner" id="spinner" style="display:none;"></div>
-                    <p id="overlayText">点击"开始播放"连接视频流</p>
+                    <p id="overlayText">Click "Start" to connect video stream</p>
                 </div>
             </div>
             <div class="status-bar">
                 <div class="status-dot" id="statusDot"></div>
-                <span id="statusText">未连接</span>
+                <span id="statusText">Disconnected</span>
             </div>
-            <button class="fullscreen-btn" id="fullscreenBtn" title="全屏">⛶</button>
+            <button class="fullscreen-btn" id="fullscreenBtn" title="Fullscreen">⛶</button>
         </div>
 
         <div class="controls">
             <div style="display:flex; gap:8px; width:100%; max-width:700px; flex-wrap:wrap;">
                 <select id="protocolSelect" onchange="onProtocolChange()"
                     style="padding:10px 14px; border-radius:8px; border:1px solid #444; background:#1a1a2e; color:#e94560; font-size:14px; min-width:120px; cursor:pointer;">
-                    <option value="">自动检测</option>
+                    <option value="">Auto Detect</option>
                     <option value="rtsp">RTSP</option>
                     <option value="onvif">ONVIF</option>
                     <option value="gb28181">GB/T 28181</option>
@@ -316,41 +316,41 @@
                 </select>
                 <input type="text" id="sourceInput" 
                     value="rtsp://admin:admin@192.168.42.1:554/live" 
-                    placeholder="输入视频流地址"
+                    placeholder="Enter video stream URL"
                     style="flex:1; min-width:300px; padding:10px 14px; border-radius:8px; border:1px solid #444; background:#1a1a2e; color:#fff; font-size:14px; font-family:'Consolas',monospace;">
             </div>
             <div style="display:flex; gap:12px;">
                 <button class="btn btn-start" id="startBtn" onclick="startStream()">
-                    ▶ 开始播放
+                    ▶ Start
                 </button>
                 <button class="btn btn-stop" id="stopBtn" onclick="stopStream()" disabled>
-                    ⏹ 停止播放
+                    ⏹ Stop
                 </button>
             </div>
         </div>
 
         <div class="info-panel">
-            <h3>📊 流信息</h3>
+            <h3>📊 Stream Info</h3>
             <div class="info-row">
-                <span class="info-label">视频流地址</span>
+                <span class="info-label">Stream URL</span>
                 <span class="info-value" id="rtspUrl">rtsp://admin:****@192.168.42.1:554/live</span>
             </div>
             <div class="info-row">
-                <span class="info-label">连接状态</span>
-                <span class="info-value" id="connState">未连接</span>
+                <span class="info-label">Connection Status</span>
+                <span class="info-value" id="connState">Disconnected</span>
             </div>
             <div class="info-row">
-                <span class="info-label">ICE 连接状态</span>
+                <span class="info-label">ICE Connection State</span>
                 <span class="info-value" id="iceState">-</span>
             </div>
             <div class="info-row">
-                <span class="info-label">视频分辨率</span>
+                <span class="info-label">Video Resolution</span>
                 <span class="info-value" id="resolution">-</span>
             </div>
         </div>
 
         <div class="log-panel" id="logPanel">
-            <h3>📋 日志</h3>
+            <h3>📋 Logs</h3>
             <div id="logContent"></div>
         </div>
     </div>
@@ -385,22 +385,22 @@
             switch (state) {
                 case 'connecting':
                     statusDot.classList.add('connecting');
-                    statusText.textContent = '连接中...';
-                    connState.textContent = '连接中...';
+                    statusText.textContent = 'Connecting...';
+                    connState.textContent = 'Connecting...';
                     break;
                 case 'connected':
                     statusDot.classList.add('connected');
-                    statusText.textContent = '已连接';
-                    connState.textContent = '已连接';
+                    statusText.textContent = 'Connected';
+                    connState.textContent = 'Connected';
                     break;
                 case 'error':
                     statusDot.classList.add('error');
-                    statusText.textContent = '连接失败';
-                    connState.textContent = '连接失败';
+                    statusText.textContent = 'Connection Failed';
+                    connState.textContent = 'Connection Failed';
                     break;
                 default:
-                    statusText.textContent = '未连接';
-                    connState.textContent = '未连接';
+                    statusText.textContent = 'Disconnected';
+                    connState.textContent = 'Disconnected';
             }
         }
 
@@ -428,7 +428,7 @@
             const input = document.getElementById('sourceInput');
             if (protocolTemplates[protocol] !== undefined && protocolTemplates[protocol] !== '') {
                 input.value = protocolTemplates[protocol];
-                input.placeholder = `输入 ${protocol.toUpperCase()} 地址`;
+                input.placeholder = `Enter ${protocol.toUpperCase()} URL`;
             }
         }
 
@@ -437,9 +437,9 @@
                 startBtn.disabled = true;
                 stopBtn.disabled = false;
                 spinner.style.display = 'block';
-                showOverlay(true, '正在连接视频流...');
+                showOverlay(true, 'Connecting to video stream...');
                 setStatus('connecting');
-                addLog('开始建立 WebRTC 连接...', 'success');
+                addLog('Establishing WebRTC connection...', 'success');
 
                 // Create RTCPeerConnection
                 pc = new RTCPeerConnection({
@@ -448,31 +448,31 @@
 
                 // Add transceiver to receive video (recvonly)
                 pc.addTransceiver('video', { direction: 'recvonly' });
-                addLog('已添加视频接收器 (recvonly)');
+                addLog('Video transceiver added (recvonly)');
 
                 // Handle ICE connection state changes
                 pc.oniceconnectionstatechange = () => {
                     iceState.textContent = pc.iceConnectionState;
-                    addLog(`ICE 状态: ${pc.iceConnectionState}`);
+                    addLog(`ICE State: ${pc.iceConnectionState}`);
                     
                     if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
                         setStatus('connected');
                         showOverlay(false);
-                        addLog('WebRTC 连接成功！', 'success');
+                        addLog('WebRTC connected successfully!', 'success');
                     } else if (pc.iceConnectionState === 'failed') {
                         setStatus('error');
-                        showOverlay(true, '连接失败，请检查 RTSP 流是否可用');
-                        addLog('ICE 连接失败', 'error');
+                        showOverlay(true, 'Connection failed, please check if the RTSP stream is available');
+                        addLog('ICE connection failed', 'error');
                     } else if (pc.iceConnectionState === 'disconnected') {
                         setStatus('connecting');
-                        showOverlay(true, '连接断开，尝试重连...');
-                        addLog('ICE 连接断开', 'error');
+                        showOverlay(true, 'Connection disconnected, retrying...');
+                        addLog('ICE connection disconnected', 'error');
                     }
                 };
 
                 // Handle incoming tracks
                 pc.ontrack = (event) => {
-                    addLog('收到视频轨道', 'success');
+                    addLog('Video track received', 'success');
                     videoElement.srcObject = event.streams[0];
                     
                     // Detect resolution
@@ -480,30 +480,30 @@
                         const w = videoElement.videoWidth;
                         const h = videoElement.videoHeight;
                         resolution.textContent = `${w} x ${h}`;
-                        addLog(`视频分辨率: ${w}x${h}`, 'success');
+                        addLog(`Video resolution: ${w}x${h}`, 'success');
                     };
                 };
 
                 // Create offer
-                addLog('创建 SDP Offer...');
+                addLog('Creating SDP Offer...');
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
 
                 // Get source URL and protocol from input
                 const sourceUrl = document.getElementById('sourceInput').value.trim();
                 if (!sourceUrl) {
-                    throw new Error('请输入视频流地址');
+                    throw new Error('Please enter a video stream URL');
                 }
 
                 const protocol = document.getElementById('protocolSelect').value;
-                const protoLabel = protocol ? protocol.toUpperCase() : '自动检测';
+                const protoLabel = protocol ? protocol.toUpperCase() : 'Auto Detect';
                 
                 // Mask password in display
                 const maskedUrl = sourceUrl.replace(/:([^@]+)@/, ':****@');
                 document.getElementById('rtspUrl').textContent = `${maskedUrl} (${protoLabel})`;
 
                 // Send offer to server and get answer
-                addLog(`发送 Offer 到服务器 (协议: ${protoLabel})...`);
+                addLog(`Sending Offer to server (protocol: ${protoLabel})...`);
                 const response = await fetch('/offer', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -516,7 +516,7 @@
                 });
 
                 if (!response.ok) {
-                    throw new Error(`服务器返回错误: ${response.status}`);
+                    throw new Error(`Server error: ${response.status}`);
                 }
 
                 const answer = await response.json();
@@ -525,14 +525,14 @@
                     throw new Error(answer.error);
                 }
 
-                addLog('收到 SDP Answer，设置远端描述...');
+                addLog('SDP Answer received, setting remote description...');
                 await pc.setRemoteDescription(new RTCSessionDescription(answer));
-                addLog('WebRTC 协商完成，等待媒体流...');
+                addLog('WebRTC negotiation completed, waiting for media stream...');
 
             } catch (error) {
-                addLog(`错误: ${error.message}`, 'error');
+                addLog(`Error: ${error.message}`, 'error');
                 setStatus('error');
-                showOverlay(true, `连接失败: ${error.message}`);
+                showOverlay(true, `Connection failed: ${error.message}`);
                 spinner.style.display = 'none';
                 startBtn.disabled = false;
                 stopBtn.disabled = true;
@@ -545,14 +545,14 @@
         }
 
         function stopStream() {
-            addLog('停止播放');
+            addLog('Playback stopped');
             if (pc) {
                 pc.close();
                 pc = null;
             }
             videoElement.srcObject = null;
             setStatus('');
-            showOverlay(true, '点击"开始播放"连接视频流');
+            showOverlay(true, 'Click "Start" to connect video stream');
             spinner.style.display = 'none';
             startBtn.disabled = false;
             stopBtn.disabled = true;
@@ -571,7 +571,7 @@
         });
 
         // Initial log
-        addLog('页面加载完成，等待用户操作...');
+        addLog('Page loaded, ready for user action...');
     </script>
 </body>
 </html>

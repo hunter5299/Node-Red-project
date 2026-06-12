@@ -29,6 +29,7 @@ import numpy as np
 from abc import ABC, abstractmethod
 from aiortc import VideoStreamTrack
 from av import VideoFrame
+from detection_store import get_detections, get_detections_at
 
 logger = logging.getLogger("video-sources")
 
@@ -63,8 +64,30 @@ class BaseVideoSource(VideoStreamTrack, ABC):
         self._connected = False
         self._stopped = False
 
-        # Latency optimization: background frame reader thread
-        # Continuously reads frames and keeps only the latest one
+        # =====================================================================
+        # 检测框与视频画面同步 —— 延迟匹配检测结果
+        # =====================================================================
+        # 时序分析：
+        #   摄像头 → 取帧 ─┬→ RTSP → 网络 → OpenCV → 本模块 recv()
+        #                  │    (RTSP 传输延迟约 200~500ms)
+        #                  │
+        #                  └→ YOLO 推理 → MQTT → 本模块检测存储
+        #                       (推理约 50~100ms)
+        #
+        #   检测结果到达时间 ≈ 摄像头取帧时刻 + 推理延迟 (~100ms)
+        #   视频帧到达时间  ≈ 摄像头取帧时刻 + RTSP延迟 (~300ms)
+        #
+        # 因为 RTSP 延迟 > 推理延迟，当 recv() 取到一帧视频时，
+        # 该帧对应的检测结果实际上已经在 frame_delay_ms 毫秒之前到达了。
+        #
+        # 解决方案：查找 (当前时间 - frame_delay_ms) 时刻的检测结果，
+        # 而非最新检测结果，使检测框与视频画面精确对齐。
+        #
+        # 可通过环境变量 FRAME_DELAY_MS 调整延迟量，默认 200ms。
+        # 增大值 → 框滞后于画面（框太旧）；减小值 → 框超前于画面（框太新）。
+        # =====================================================================
+        self.frame_delay_ms = int(os.environ.get("FRAME_DELAY_MS", "500"))
+
         self._latest_frame = None
         self._frame_lock = threading.Lock()
         self._frame_event = threading.Event()
@@ -74,7 +97,10 @@ class BaseVideoSource(VideoStreamTrack, ABC):
         # Start background frame reader
         self._reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
         self._reader_thread.start()
-        logger.info(f"[{self.__class__.__name__}] Background frame reader started")
+        logger.info(
+            f"[{self.__class__.__name__}] Background frame reader started, "
+            f"frame_delay={self.frame_delay_ms}ms"
+        )
 
     def _reader_loop(self):
         """Background thread: continuously read frames, keep only the latest."""
@@ -129,11 +155,136 @@ class BaseVideoSource(VideoStreamTrack, ABC):
         except Exception as e:
             logger.error(f"Reconnection failed: {e}")
 
+    # COCO 80 类别名称（与 YOLO11n 模型对应）
+    COCO_CLASSES = [
+        "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
+        "truck", "boat", "traffic light", "fire hydrant", "stop sign",
+        "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep",
+        "cow", "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella",
+        "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard",
+        "sports ball", "kite", "baseball bat", "baseball glove", "skateboard",
+        "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork",
+        "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange",
+        "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair",
+        "couch", "potted plant", "bed", "dining table", "toilet", "tv",
+        "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave",
+        "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase",
+        "scissors", "teddy bear", "hair drier", "toothbrush",
+    ]
+
+    def _draw_detections(self, frame: np.ndarray) -> np.ndarray:
+        """在画面上绘制 YOLO 检测结果（边界框 + 标签 + 置信度）。
+
+        使用延迟匹配的检测结果：查找 frame_delay_ms 毫秒前的检测记录，
+        使检测框与当前视频画面对齐（补偿 RTSP 传输延迟）。
+        """
+        # 取 (当前时间 - 延迟量) 时刻的检测结果，与当前视频帧对齐
+        target_ts = time.monotonic() - self.frame_delay_ms / 1000.0
+        detections = get_detections_at(target_ts)
+
+        if not detections or not detections.get("boxes"):
+            return frame
+
+        boxes = detections["boxes"]
+        resolution = detections.get("resolution", [640, 640])
+
+        frame_h, frame_w = frame.shape[:2]
+        model_w, model_h = resolution[0], resolution[1]
+
+        # 计算缩放比例
+        scale_x = frame_w / model_w
+        scale_y = frame_h / model_h
+
+        # 颜色表（BGR 格式）
+        colors = [
+            (0, 0, 255),    # 红
+            (0, 255, 0),    # 绿
+            (0, 255, 255),  # 黄
+            (0, 165, 255),  # 橙
+            (255, 0, 0),    # 蓝
+            (255, 0, 255),  # 紫
+            (255, 255, 0),  # 青
+        ]
+
+        for box in boxes:
+            # 解析边界框: [cx, cy, w, h, score, label_idx]
+            if not isinstance(box, (list, tuple)) or len(box) < 6:
+                continue
+
+            cx, cy, w, h = box[0], box[1], box[2], box[3]
+            score = box[4]          # 置信度（可能是 0~1 或 0~100）
+            label_idx = int(box[5]) # 类别索引
+
+            # 将中心点+宽高转换为左上角+右下角坐标（模型分辨率空间）
+            x1 = cx - w / 2
+            y1 = cy - h / 2
+            x2 = cx + w / 2
+            y2 = cy + h / 2
+
+            # 缩放坐标到实际画面尺寸
+            x1 = int(x1 * scale_x)
+            y1 = int(y1 * scale_y)
+            x2 = int(x2 * scale_x)
+            y2 = int(y2 * scale_y)
+
+            # 确保坐标在画面范围内
+            x1 = max(0, min(x1, frame_w - 1))
+            y1 = max(0, min(y1, frame_h - 1))
+            x2 = max(0, min(x2, frame_w - 1))
+            y2 = max(0, min(y2, frame_h - 1))
+
+            # 获取类别名称
+            if 0 <= label_idx < len(self.COCO_CLASSES):
+                class_name = self.COCO_CLASSES[label_idx]
+            else:
+                class_name = f"class_{label_idx}"
+
+            # 置信度文本：处理 0~1 或 0~100 格式
+            if score > 1:
+                confidence = score / 100.0
+            else:
+                confidence = score
+            label_text = f"{class_name} {confidence:.0%}"
+
+            color = colors[label_idx % len(colors)]
+
+            # 画边界框 - 确保所有坐标为 Python int（避免 numpy 类型导致 OpenCV 报错）
+            x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+            thickness = max(2, int(min(frame_w, frame_h) / 300))
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
+
+            # 准备绘制文字
+            font_scale = max(0.5, min(frame_w, frame_h) / 1000)
+            font_thickness = max(1, int(font_scale * 2))
+
+            (text_w, text_h), baseline = cv2.getTextSize(
+                label_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness
+            )
+            text_w, text_h, baseline = int(text_w), int(text_h), int(baseline)
+
+            # 标签背景框（放在边界框上方，避免超出顶部）
+            label_y = int(max(y1 - text_h - baseline - 6, 0))
+            cv2.rectangle(frame, (x1, label_y), (int(x1 + text_w + 6), y1), color, -1)
+
+            # 标签文字（白色）
+            cv2.putText(
+                frame, label_text,
+                (int(x1 + 3), int(y1 - baseline - 3)),
+                cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                (255, 255, 255), font_thickness, cv2.LINE_AA,
+            )
+
+        return frame
+
     async def recv(self):
         """
         Called by aiortc to get the next video frame.
         Uses the latest frame from the background reader (zero-wait).
         This eliminates frame queue buildup and minimizes latency.
+
+        检测框通过延迟匹配与视频画面同步：
+        在 _draw_detections 中查找 frame_delay_ms 毫秒前的检测结果，
+        补偿 RTSP 传输延迟，使框与画面精确对齐。
         """
         pts, time_base = await self.next_timestamp()
 
@@ -144,11 +295,19 @@ class BaseVideoSource(VideoStreamTrack, ABC):
             logger.warning("Failed to read frame, returning black frame")
             frame = np.zeros((self.height, self.width, 3), dtype=np.uint8)
 
-        # Resize if frame dimensions don't match expected
+        # 使用帧的实际分辨率（避免不必要的 resize 导致模糊）
         h, w = frame.shape[:2]
         if (w, h) != (self.width, self.height):
-            frame = cv2.resize(frame, (self.width, self.height),
-                               interpolation=cv2.INTER_LINEAR)
+            # 帧尺寸与预期不符时，更新 self.width/height 以匹配实际帧
+            # 而不是缩放帧（缩放会导致画面模糊）
+            self.width = w
+            self.height = h
+
+        # 确保帧是可写的（OpenCV cap.read() 可能返回只读数组）
+        frame = frame.copy()
+
+        # 绘制 YOLO 检测结果（延迟匹配，框与画面对齐）
+        frame = self._draw_detections(frame)
 
         # Convert BGR -> RGB
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
