@@ -1,0 +1,399 @@
+[
+    {
+        "id": "ace79a1640584e15",
+        "type": "tab",
+        "label": "flow1",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "d05a88f5ece0c6ee",
+        "type": "function",
+        "z": "ace79a1640584e15",
+        "name": "Action determination",
+        "func": "let data = msg.payload.data || msg.payload;\nif (!data || !data.keypoints || !data.keypoints[0] || !data.keypoints[0][1]) return null;\n\nconst kpts = data.keypoints[0][1];\n\n// YOLOv11 pose keypoint index definitions\nconst LEFT_SHOULDER = 5;\nconst RIGHT_SHOULDER = 6;\nconst LEFT_WRIST = 9;\nconst RIGHT_WRIST = 10;\n\n// Helper function to extract keypoints\nfunction getPt(i) {\n    const p = kpts[i];\n    if (!p || p[0] <= 1) return null;\n    return { x: p[0], y: p[1], conf: p[2] || 0 };\n}\n\nconst ls = getPt(LEFT_SHOULDER);\nconst rs = getPt(RIGHT_SHOULDER);\nconst lw = getPt(LEFT_WRIST);\nconst rw = getPt(RIGHT_WRIST);\n\n// Check if keypoints exist and confidence > 0.4 to avoid false positives\nif (!ls || !rs || !lw || !rw || ls.conf < 0.4 || rs.conf < 0.4 || lw.conf < 0.4 || rw.conf < 0.4) {\n    return null;\n}\n\n// Calculate straight-line distance between shoulders and between wrists\nconst distShoulders = Math.sqrt(Math.pow(ls.x - rs.x, 2) + Math.pow(ls.y - rs.y, 2));\nconst distWrists = Math.sqrt(Math.pow(lw.x - rw.x, 2) + Math.pow(lw.y - rw.y, 2));\n\n// Core logic: if wrist distance is less than shoulder distance, action is triggered\nconst isTriggered = distWrists < distShoulders;\n\n// Get last trigger time, set a 10-second cooldown to avoid repeated triggering during recording and playback\nlet lastTriggerTime = context.get(\"lastTriggerTime\") || 0;\nconst currentTime = Date.now();\n\nif (isTriggered && (currentTime - lastTriggerTime > 10000)) {\n    context.set(\"lastTriggerTime\", currentTime);\n    return { payload: \"Trigger recording!\" };\n}\n\nreturn null;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 700,
+        "y": 860,
+        "wires": [
+            [
+                "128e921632e5d69a"
+            ]
+        ]
+    },
+    {
+        "id": "128e921632e5d69a",
+        "type": "exec",
+        "z": "ace79a1640584e15",
+        "command": "echo \"&zhuxuanjun9\" | sudo -S sh -c 'echo 1 > /sys/class/leds/blue/brightness'",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "",
+        "winHide": false,
+        "oldrc": false,
+        "name": "Blue LED on",
+        "x": 970,
+        "y": 860,
+        "wires": [
+            [
+                "724c27418833cf56"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "724c27418833cf56",
+        "type": "exec",
+        "z": "ace79a1640584e15",
+        "command": "arecord -D hw:0,0 -r 16000 -f S16_LE -c 1 -d 5 /tmp/test.wav",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "",
+        "oldrc": false,
+        "name": "Microphone recording (5 seconds)",
+        "x": 1220,
+        "y": 860,
+        "wires": [
+            [
+                "9745818e3bf96cc5",
+                "e6f7e32a9bad34df"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "9745818e3bf96cc5",
+        "type": "exec",
+        "z": "ace79a1640584e15",
+        "command": "echo \"&zhuxuanjun9\" | sudo -S sh -c 'echo 0 > /sys/class/leds/blue/brightness'",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "",
+        "winHide": false,
+        "oldrc": false,
+        "name": "Blue LED off",
+        "x": 1440,
+        "y": 740,
+        "wires": [
+            [],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "e6f7e32a9bad34df",
+        "type": "file in",
+        "z": "ace79a1640584e15",
+        "name": "Read audio",
+        "filename": "/tmp/test.wav",
+        "filenameType": "str",
+        "format": "",
+        "chunk": false,
+        "sendError": false,
+        "encoding": "none",
+        "allProps": false,
+        "x": 1450,
+        "y": 940,
+        "wires": [
+            [
+                "bec6669ff843e44e"
+            ]
+        ]
+    },
+    {
+        "id": "f35629e6ef3d66e8",
+        "type": "camera",
+        "z": "ace79a1640584e15",
+        "name": "AI Camera",
+        "client": "d4edfe2d22b78af8",
+        "audio": false,
+        "volume": 80,
+        "option": 0,
+        "fps": 30,
+        "mirror": false,
+        "flip": false,
+        "x": 210,
+        "y": 860,
+        "wires": [
+            [
+                "850e42fa5d9861b0"
+            ]
+        ]
+    },
+    {
+        "id": "850e42fa5d9861b0",
+        "type": "model",
+        "z": "ace79a1640584e15",
+        "name": "YOLO11n Pose",
+        "uri": "/usr/share/supervisor/models/yolo11n_pose_cv181x_int8.cvimodel",
+        "model": "YOLO11n Pose",
+        "tscore": "0.89",
+        "tiou": "0.64",
+        "debug": false,
+        "trace": false,
+        "counting": false,
+        "draw": false,
+        "classes": "person",
+        "splitter": "0,0,0,0",
+        "previewResolution": "640x640",
+        "previewFps": 30,
+        "client": "d4edfe2d22b78af8",
+        "x": 440,
+        "y": 860,
+        "wires": [
+            [
+                "d05a88f5ece0c6ee",
+                "17c111800e55fc61"
+            ]
+        ]
+    },
+    {
+        "id": "17c111800e55fc61",
+        "type": "preview",
+        "z": "ace79a1640584e15",
+        "name": "preview",
+        "active": true,
+        "pass": false,
+        "outputs": 0,
+        "x": 660,
+        "y": 80,
+        "wires": []
+    },
+    {
+        "id": "bec6669ff843e44e",
+        "type": "function",
+        "z": "ace79a1640584e15",
+        "name": "Strip WAV header to get PCM",
+        "func": "let buf = msg.payload;\nif (buf && buf.length > 44 && buf.slice(0, 4).toString() === 'RIFF') {\n    msg.payload = buf.slice(44);\n} else {\n    msg.payload = buf;\n}\nnode.status({ fill: 'blue', shape: 'dot', text: 'PCM ' + msg.payload.length + 'B' });\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 280,
+        "y": 1120,
+        "wires": [
+            [
+                "615ea54220a38871"
+            ]
+        ]
+    },
+    {
+        "id": "615ea54220a38871",
+        "type": "function",
+        "z": "ace79a1640584e15",
+        "name": "iFlytek STT (WebSocket)",
+        "func": "// ===== iFlytek STT: PCM → text =====\n\nconst APPID = \"da94379a\";\nconst APISecret = \"NGRlZDk2MDY0ODA1NTViNGVhNTY2YmFm\";\nconst APIKey = \"e23e27197669ca24bcc1f76574007dbe\";\n\nfunction getAuthUrl(host, path) {\n    const date = new Date().toUTCString();\n    const signatureOrigin = \"host: \" + host + \"\\ndate: \" + date + \"\\nGET \" + path + \" HTTP/1.1\";\n    const signature = crypto.createHmac('sha256', APISecret).update(signatureOrigin).digest('base64');\n    const authOrigin = \"api_key=\\\"\" + APIKey + \"\\\", algorithm=\\\"hmac-sha256\\\", headers=\\\"host date request-line\\\", signature=\\\"\" + signature + \"\\\"\";\n    const auth = Buffer.from(authOrigin).toString('base64');\n    return \"wss://\" + host + path + \"?authorization=\" + encodeURIComponent(auth) + \"&date=\" + encodeURIComponent(date) + \"&host=\" + encodeURIComponent(host);\n}\n\nconst audioData = msg.payload;\nconst url = getAuthUrl('iat-api.xfyun.cn', '/v2/iat');\nconst socket = new ws(url);\nlet resultText = [];\nlet timeout = setTimeout(function() { try { socket.close(); } catch(e) {} node.error('STT timeout'); }, 15000);\n\nsocket.on('open', function() {\n    const chunkSize = 8000;\n    let offset = 0;\n    function sendChunk() {\n        if (offset >= audioData.length) return;\n        let end = offset + chunkSize;\n        let chunk = audioData.slice(offset, end);\n        let status;\n        if (offset === 0) status = 0;\n        else status = 1;\n        if (end >= audioData.length) status = 2;\n        const frame = {\n            common: { app_id: APPID },\n            business: { domain: \"iat\", language: \"zh_cn\", accent: \"mandarin\", vinfo: 1, vad_eos: 10000 },\n            data: { status: status, format: \"audio/L16;rate=16000\", audio: chunk.toString('base64'), encoding: \"raw\" }\n        };\n        socket.send(JSON.stringify(frame));\n        offset = end;\n        if (status !== 2) setTimeout(sendChunk, 40);\n    }\n    sendChunk();\n});\n\nsocket.on('message', function(data) {\n    const m = JSON.parse(data);\n    if (m.code !== 0) { node.error(\"STT Error: \" + m.code + \" - \" + (m.message || 'unknown')); socket.close(); return; }\n    const wsData = m.data.result.ws;\n    for (const item of wsData) { for (const w of item.cw) { resultText.push(w.w); } }\n    if (m.data.status === 2) { socket.close(); }\n});\n\nsocket.on('close', function() {\n    clearTimeout(timeout);\n    const text = resultText.join('');\n    node.status({ fill: 'green', shape: 'dot', text: \"Recognized: \" + (text || '(empty)').substring(0, 20) });\n    node.send({ payload: text });\n});\n\nsocket.on('error', function(e) { clearTimeout(timeout); node.error(\"STT WS Error: \" + e.message); });\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [
+            {
+                "var": "ws",
+                "module": "ws"
+            },
+            {
+                "var": "crypto",
+                "module": "crypto"
+            }
+        ],
+        "x": 540,
+        "y": 1120,
+        "wires": [
+            [
+                "0a37cec5b21ec1fd",
+                "8ff02fc639d4f15c"
+            ]
+        ]
+    },
+    {
+        "id": "0a37cec5b21ec1fd",
+        "type": "debug",
+        "z": "ace79a1640584e15",
+        "name": "Print recognized text",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 800,
+        "y": 1220,
+        "wires": []
+    },
+    {
+        "id": "8ff02fc639d4f15c",
+        "type": "function",
+        "z": "ace79a1640584e15",
+        "name": "iFlytek LLM (WebSocket)",
+        "func": "// ===== iFlytek LLM Spark Lite: text → reply =====\n\nconst APPID = \"da94379a\";\nconst APISecret = \"NGRlZDk2MDY0ODA1NTViNGVhNTY2YmFm\";\nconst APIKey = \"e23e27197669ca24bcc1f76574007dbe\";\n\nfunction getAuthUrl(host, path) {\n    const date = new Date().toUTCString();\n    const signatureOrigin = \"host: \" + host + \"\\ndate: \" + date + \"\\nGET \" + path + \" HTTP/1.1\";\n    const signature = crypto.createHmac('sha256', APISecret).update(signatureOrigin).digest('base64');\n    const authOrigin = \"api_key=\\\"\" + APIKey + \"\\\", algorithm=\\\"hmac-sha256\\\", headers=\\\"host date request-line\\\", signature=\\\"\" + signature + \"\\\"\";\n    const auth = Buffer.from(authOrigin).toString('base64');\n    return \"wss://\" + host + path + \"?authorization=\" + encodeURIComponent(auth) + \"&date=\" + encodeURIComponent(date) + \"&host=\" + encodeURIComponent(host);\n}\n\nlet userText = msg.payload;\nif (!userText || String(userText).trim().length === 0) { userText = \"Sorry, I didn't catch that. Please say it again.\"; }\n\nconst url = getAuthUrl('spark-api.xf-yun.com', '/v1.1/chat');\nconst socket = new ws(url);\nlet resultText = [];\nlet timeout = setTimeout(function() { try { socket.close(); } catch(e) {} node.error('LLM timeout'); }, 20000);\n\nsocket.on('open', function() {\n    socket.send(JSON.stringify({\n        header: { app_id: APPID, uid: \"recamera_nodered\" },\n        parameter: { chat: { domain: \"lite\", temperature: 0.5, max_tokens: 1024 } },\n        payload: { message: { text: [\n            { role: \"system\", content: \"You are a voice assistant deployed on the smart camera reCamera. Please answer user questions in short, conversational, friendly language. Each response should be no more than 50 Chinese characters.\" },\n            { role: \"user\", content: userText }\n        ] } }\n    }));\n});\n\nsocket.on('message', function(data) {\n    const m = JSON.parse(data);\n    if (m.header.code !== 0) { node.error(\"LLM Error: \" + m.header.code + \" - \" + m.header.message); socket.close(); return; }\n    resultText.push(m.payload.choices.text[0].content);\n    if (m.payload.choices.status === 2) { socket.close(); }\n});\n\nsocket.on('close', function() {\n    clearTimeout(timeout);\n    let text = resultText.join('');\n    if (!text) text = \"The brain is offline temporarily. Please try again later.\";\n    node.status({ fill: 'green', shape: 'dot', text: \"Reply: \" + text.substring(0, 20) });\n    node.send({ payload: text });\n});\n\nsocket.on('error', function(e) { clearTimeout(timeout); node.error(\"LLM WS Error: \" + e.message); });\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [
+            {
+                "var": "ws",
+                "module": "ws"
+            },
+            {
+                "var": "crypto",
+                "module": "crypto"
+            }
+        ],
+        "x": 800,
+        "y": 1120,
+        "wires": [
+            [
+                "4037611df45229de",
+                "3b4f3a9e0cc5d8d8"
+            ]
+        ]
+    },
+    {
+        "id": "4037611df45229de",
+        "type": "debug",
+        "z": "ace79a1640584e15",
+        "name": "Print LLM reply",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1060,
+        "y": 1220,
+        "wires": []
+    },
+    {
+        "id": "3b4f3a9e0cc5d8d8",
+        "type": "function",
+        "z": "ace79a1640584e15",
+        "name": "TTS (execSync child process)",
+        "func": "// ===== TTS v4: execSync launches independent Node process =====\n// No process global in sandbox\n// Parse logic fixed based on actual test_tts.py data\n\nconst APPID = \"da94379a\";\nconst APISecret = \"NGRlZDk2MDY0ODA1NTViNGVhNTY2YmFm\";\nconst APIKey = \"e23e27197669ca24bcc1f76574007dbe\";\nconst OUT_FILE = \"/tmp/reply.wav\";\nconst SCRIPT_PATH = \"/tmp/_tts_runner.js\";\n\nconst host = \"cbm01.cn-huabei-1.xf-yun.com\";\nconst apiPath = \"/v1/private/mcd9m97e6\";\nconst date = new Date().toUTCString();\nconst sigOrigin = \"host: \" + host + \"\\ndate: \" + date + \"\\nGET \" + apiPath + \" HTTP/1.1\";\nconst sig = crypto.createHmac('sha256', APISecret).update(sigOrigin).digest('base64');\nconst authO = \"api_key=\\\"\" + APIKey + \"\\\", algorithm=\\\"hmac-sha256\\\", headers=\\\"host date request-line\\\", signature=\\\"\" + sig + \"\\\"\";\nconst authB64 = Buffer.from(authO).toString('base64');\nconst ttsUrl = \"wss://\" + host + apiPath + \"?authorization=\" + encodeURIComponent(authB64) + \"&date=\" + encodeURIComponent(date) + \"&host=\" + encodeURIComponent(host);\n\nconst text = msg.payload || \"\";\nif (!String(text).trim()) { node.error('TTS input is empty'); return; }\nnode.warn('Requesting TTS synthesis: ' + text);\n\n// Build independent script v4\nconst script = [\n    \"const fs = require('fs');\",\n    \"try {\",\n    \"  let WebSocket = null;\",\n    \"  const wsPaths = ['ws', '/usr/lib/node_modules/ws', '/usr/local/lib/node_modules/ws',\",\n    \"    (process.env.HOME || '/root') + '/.node-red/node_modules/ws',\",\n    \"    '/usr/lib/node-red/node_modules/ws', '/opt/node_modules/ws'];\",\n    \"  for (const p of wsPaths) { try { WebSocket = require(p); break; } catch(e) {} }\",\n    \"  if (!WebSocket) { fs.writeFileSync('/tmp/_tts_err', 'Cannot find ws module'); process.exit(1); }\",\n    \"  const url = \" + JSON.stringify(ttsUrl) + \";\",\n    \"  const text = \" + JSON.stringify(text) + \";\",\n    \"  const appid = \" + JSON.stringify(APPID) + \";\",\n    \"  const outFile = \" + JSON.stringify(OUT_FILE) + \";\",\n    \"  const chunks = [];\",\n    \"  const sock = new WebSocket(url);\",\n    \"  const timer = setTimeout(function() { try{sock.close();}catch(e){} fs.writeFileSync('/tmp/_tts_err','timeout after 20s'); process.exit(1); }, 20000);\",\n    \"  sock.on('open', function() {\",\n    \"    sock.send(JSON.stringify({\",\n    \"      header: { app_id: appid, status: 2 },\",\n    \"      parameter: { tts: { vcn: 'x5_EnUs_Lila_flow', speed: 50, volume: 50, pitch: 50, audio: { encoding: 'raw', sample_rate: 16000 } } },\",\n    \"      payload: { text: { encoding: 'utf8', status: 2, text: Buffer.from(text).toString('base64') } }\",\n    \"    }));\",\n    \"  });\",\n    \"  sock.on('message', function(d) {\",\n    \"    const m = JSON.parse(d);\",\n    \"    const code = m.header ? m.header.code : -1;\",\n    \"    const status = m.header ? m.header.status : -1;\",\n    \"    if (code !== 0) {\",\n    \"      clearTimeout(timer);\",\n    \"      fs.writeFileSync('/tmp/_tts_err', 'code=' + code + ' ' + (m.header.message || ''));\",\n    \"      process.exit(1);\",\n    \"    }\",\n    \"    // Only middle frames with status=1 have actual audio data\",\n    \"    if (status === 1 && m.payload && m.payload.audio && m.payload.audio.audio) {\",\n    \"      chunks.push(Buffer.from(m.payload.audio.audio, 'base64'));\",\n    \"    }\",\n    \"    if (status === 2) {\",\n    \"      clearTimeout(timer);\",\n    \"      if (chunks.length === 0) {\",\n    \"        fs.writeFileSync('/tmp/_tts_err', 'finished but no audio chunks received');\",\n    \"        process.exit(1);\",\n    \"      }\",\n    \"      const pcm = Buffer.concat(chunks);\",\n    \"      const hdr = Buffer.alloc(44);\",\n    \"      hdr.write('RIFF',0); hdr.writeUInt32LE(36+pcm.length,4); hdr.write('WAVE',8); hdr.write('fmt ',12);\",\n    \"      hdr.writeUInt32LE(16,16); hdr.writeUInt16LE(1,20); hdr.writeUInt16LE(1,22);\",\n    \"      hdr.writeUInt32LE(16000,24); hdr.writeUInt32LE(32000,28);\",\n    \"      hdr.writeUInt16LE(2,32); hdr.writeUInt16LE(16,34);\",\n    \"      hdr.write('data',36); hdr.writeUInt32LE(pcm.length,40);\",\n    \"      fs.writeFileSync(outFile, Buffer.concat([hdr, pcm]));\",\n    \"      sock.close();\",\n    \"    }\",\n    \"  });\",\n    \"  sock.on('error', function(e) { clearTimeout(timer); fs.writeFileSync('/tmp/_tts_err', 'ws-error: ' + e.message); process.exit(1); });\",\n    \"} catch(e) { fs.writeFileSync('/tmp/_tts_err', 'top-err: ' + e.message); process.exit(1); }\"\n].join(\"\\n\");\n\nfs.writeFileSync(SCRIPT_PATH, script);\nnode.warn('Launching independent Node process...');\n\ntry {\n    const cmd = \"NODE_PATH=$HOME/.node-red/node_modules:/usr/lib/node_modules:/usr/local/lib/node_modules:/usr/lib/node-red/node_modules node \" + SCRIPT_PATH;\n    cp.execSync(cmd, { timeout: 25000, stdio: 'pipe' });\n    let errMsg = '';\n    try { errMsg = fs.readFileSync('/tmp/_tts_err', 'utf8'); } catch(e) {}\n    if (errMsg) {\n        node.status({ fill: 'red', shape: 'ring', text: 'TTS failed' });\n        node.send({ payload: { ok: false, error: errMsg, text: text } });\n        return;\n    }\n    const stat = fs.statSync(OUT_FILE);\n    node.status({ fill: 'green', shape: 'dot', text: 'TTS success ' + stat.size + 'B' });\n    node.warn('WAV saved: ' + OUT_FILE + ' (' + stat.size + ' bytes)');\n    node.send({ payload: { ok: true, text: text, size: stat.size, file: OUT_FILE } });\n} catch(e) {\n    let errMsg = e.message;\n    try { errMsg = fs.readFileSync('/tmp/_tts_err', 'utf8'); } catch(e2) {}\n    node.status({ fill: 'red', shape: 'ring', text: 'Execution failed' });\n    node.error('TTS exec failed: ' + errMsg);\n    node.send({ payload: { ok: false, error: errMsg, text: text } });\n}\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [
+            {
+                "var": "crypto",
+                "module": "crypto"
+            },
+            {
+                "var": "fs",
+                "module": "fs"
+            },
+            {
+                "var": "cp",
+                "module": "child_process"
+            }
+        ],
+        "x": 1050,
+        "y": 1120,
+        "wires": [
+            [
+                "878dcf3ad33b1a65",
+                "cf30660265f2b3f7"
+            ]
+        ]
+    },
+    {
+        "id": "878dcf3ad33b1a65",
+        "type": "debug",
+        "z": "ace79a1640584e15",
+        "name": "Print TTS result",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1320,
+        "y": 1220,
+        "wires": []
+    },
+    {
+        "id": "cf30660265f2b3f7",
+        "type": "switch",
+        "z": "ace79a1640584e15",
+        "name": "Success?",
+        "property": "payload.ok",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "true"
+            }
+        ],
+        "checkall": "true",
+        "repair": false,
+        "outputs": 1,
+        "x": 1300,
+        "y": 1120,
+        "wires": [
+            [
+                "f01be78606204485"
+            ]
+        ]
+    },
+    {
+        "id": "f01be78606204485",
+        "type": "exec",
+        "z": "ace79a1640584e15",
+        "command": "aplay -D hw:1,0 -f S16_LE -c 1 -r 16000 /tmp/reply.wav",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "",
+        "winHide": false,
+        "oldrc": false,
+        "name": "Speaker playback",
+        "x": 1530,
+        "y": 1120,
+        "wires": [
+            [],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "d4edfe2d22b78af8",
+        "type": "sscma",
+        "host": "localhost",
+        "mqttport": "1883",
+        "apiport": "80",
+        "clientid": "recamera",
+        "username": "",
+        "password": ""
+    },
+    {
+        "id": "c437ddaf45dbddfb",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-sscma": "0.3.6"
+        }
+    }
+]
