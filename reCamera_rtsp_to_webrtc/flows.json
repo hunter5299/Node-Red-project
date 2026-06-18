@@ -1,0 +1,139 @@
+[
+    {
+        "id": "19940e38e8da6329",
+        "type": "tab",
+        "label": "流程 1",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "c42f9088bcf384f3",
+        "type": "camera",
+        "z": "19940e38e8da6329",
+        "name": "",
+        "client": "5d7e683947fc0ae7",
+        "audio": true,
+        "volume": 80,
+        "option": "1",
+        "fps": 30,
+        "mirror": false,
+        "flip": false,
+        "x": 140,
+        "y": 460,
+        "wires": [
+            [
+                "dfe48bdda47ec4a7",
+                "e3bd965e96bf70bb"
+            ]
+        ]
+    },
+    {
+        "id": "e3bd965e96bf70bb",
+        "type": "stream",
+        "z": "19940e38e8da6329",
+        "name": "stream",
+        "protocol": 0,
+        "port": 554,
+        "session": "live",
+        "username": "admin",
+        "password": "admin",
+        "client": "5d7e683947fc0ae7",
+        "x": 330,
+        "y": 460,
+        "wires": []
+    },
+    {
+        "id": "dfe48bdda47ec4a7",
+        "type": "model",
+        "z": "19940e38e8da6329",
+        "name": "",
+        "uri": "/usr/share/supervisor/models/yolo11n_detection_cv181x_int8.cvimodel",
+        "model": "YOLO11n Detection",
+        "tscore": "0.61",
+        "tiou": "0.38",
+        "debug": false,
+        "trace": false,
+        "counting": false,
+        "draw": false,
+        "classes": "person,bicycle,car,motorcycle,airplane,bus,train,truck,boat,traffic light,fire hydrant,stop sign,parking meter,bench,bird,cat,dog,horse,sheep,cow,elephant,bear,zebra,giraffe,backpack,umbrella,handbag,tie,suitcase,frisbee,skis,snowboard,sports ball,kite,baseball bat,baseball glove,skateboard,surfboard,tennis racket,bottle,wine glass,cup,fork,knife,spoon,bowl,banana,apple,sandwich,orange,broccoli,carrot,hot dog,pizza,donut,cake,chair,couch,potted plant,bed,dining table,toilet,tv,laptop,mouse,remote,keyboard,cell phone,microwave,oven,toaster,sink,refrigerator,book,clock,vase,scissors,teddy bear,hair drier,toothbrush",
+        "splitter": "0,0,0,0",
+        "previewResolution": "640x640",
+        "previewFps": 30,
+        "client": "5d7e683947fc0ae7",
+        "x": 330,
+        "y": 540,
+        "wires": [
+            [
+                "408836a6c231dc7f"
+            ]
+        ]
+    },
+    {
+        "id": "408836a6c231dc7f",
+        "type": "mqtt out",
+        "z": "19940e38e8da6329",
+        "name": "",
+        "topic": "yolo11n_result",
+        "qos": "0",
+        "retain": "false",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "7e65324ed16050b7",
+        "x": 500,
+        "y": 540,
+        "wires": []
+    },
+    {
+        "id": "5d7e683947fc0ae7",
+        "type": "sscma",
+        "host": "localhost",
+        "mqttport": "1883",
+        "apiport": "80",
+        "clientid": "recamera",
+        "username": "",
+        "password": ""
+    },
+    {
+        "id": "7e65324ed16050b7",
+        "type": "mqtt-broker",
+        "name": "",
+        "broker": "192.168.100.181",
+        "port": 1883,
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "ded52e73dc305055",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-sscma": "0.3.6"
+        }
+    }
+]
